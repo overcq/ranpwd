@@ -17,6 +17,7 @@
 
 #include "config.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
@@ -27,9 +28,8 @@
 # include <getopt.h>
 #endif
 
-static int ran_fd = 0;		/* /dev/(u)random file descriptor if avail. */
-static int secure_source = 0;	/* 1 if we should use /dev/random */
-
+static int ran_fd;		/* /dev/(u)random file descriptor if avail. */
+static int secure_source;	/* 1 if we should use /dev/random */
 const char *program;
 
 enum extended_options {
@@ -106,55 +106,57 @@ static void usage(int err)
  *              srand()
  */
 static void setrandom(void)
-{
-  time_t t;
-  pid_t pid;
-
-  if ( ran_fd <= 0 )
-    {
-      ran_fd = open(secure_source ? "/dev/random" : "/dev/urandom", O_RDONLY);
-
-      if ( ran_fd <= 0 )
-	{
-	  if ( secure_source )
-	    {
-	      fprintf(stderr, "%s: cannot open /dev/random\n", program);
-	      exit(1);
+{   ran_fd = open( secure_source ? "/dev/random" : "/dev/urandom", O_RDONLY );
+    if( !~ran_fd )
+	{   if( secure_source )
+	    {   fprintf(stderr, "%s: cannot open /dev/random\n", program);
+            exit(1);
 	    }
-	  else
-	    fprintf(stderr, "%s: warning: cannot open /dev/urandom\n", program);
-	  time(&t);
-	  pid = getpid();
-	  srand(t^pid);		/* As secure as we can get... */
+        else
+            fprintf(stderr, "%s: warning: cannot open /dev/urandom\n", program);
+        time_t t;
+        time( &t );
+        pid_t pid = getpid();
+        srand( t ^ pid );		/* As secure as we can get... */
 	}
-    }
 }
 
 /*
  * getrandom(): Get random bytes
  */
-static int getrandom(unsigned char *cbuf, size_t nbytes)
-{
-  int i;
-
-  if ( ran_fd )
-    {
-      while( nbytes )
-	{
-	  i = read(ran_fd, cbuf, nbytes);
-	  if ( i < 0 )
-	    return i;
-	  nbytes -= i;
-	  cbuf += nbytes;
-	}
-    }
-  else
-    {
-      while ( nbytes-- )
-	*(cbuf++) = (unsigned char) rand();
+static
+int
+getrandom( unsigned char **buf
+, size_t n
+){  unsigned char *buf_ = malloc(n);
+    if( !buf_ )
+        return ~0;
+    *buf = buf_;
+    if( ~ran_fd )
+        while(n)
+        {   int i = read( ran_fd, buf_, n );
+            if( !~i )
+            {   free( *buf );
+                return i;
+            }
+            n -= i;
+            buf_ += n;
+        }
+    else
+    {   if( RAND_MAX >= ( 2U << 16 ) - 1 )
+        {   _Bool half = n % 2;
+            n /= 2;
+            while( n-- )
+            {   *( unsigned short * )buf_ = ( unsigned short )rand();
+                buf_ += 2;
+            }
+            if(half)
+                *buf_ = ( unsigned char )rand();
+        }else
+            while( n-- )
+                *buf_++ = ( unsigned char )rand();
     }  
-
-  return 0;
+    return 0;
 }
 
 /*
@@ -163,7 +165,7 @@ static int getrandom(unsigned char *cbuf, size_t nbytes)
  * putchar(), with option to escape characters that have to be escaped in C
  */
 static void cputc(int ch, int esc) {
-  if ( esc ) {
+  if(esc) {
     switch ( ch ) {
     case '\"': case '\\':
     case '\'':
@@ -186,170 +188,290 @@ enum output_type {
   ty_dec, ty_oct, ty_binary
 };
 
-static void output_random(enum output_type type, int nchar, int decor)
-{
-  int i;
-  unsigned char ch;
-  unsigned char buf[16];
-  int ichar = nchar;
+static
+int
+bits_in_range( unsigned min
+, unsigned max
+){  return sizeof(unsigned) * 8 - __builtin_clz( max - min + 1 );
+}
 
-  while (nchar) {
-    switch (type)
-      {
-      case ty_ascii:
-	getrandom(&ch, 1);
-	ch &= 0x7f;
-	if ( ch >= 0x21 && ch <= 0x7e ) { cputc(ch,decor); nchar--; }
-	break;
-	
+static
+int
+output_random_single_range( enum output_type type
+, int n
+, int decor
+, unsigned char min
+, unsigned char max
+){  unsigned bits = bits_in_range( min, max );
+    unsigned bytes = n * bits;
+    bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
+    unsigned char *buf, *buf_;
+    if( getrandom( &buf, bytes ))
+        return ~0;
+    buf_ = buf;
+    unsigned i = 0;
+    while( n-- )
+    {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
+        if( bits > 8 - i )
+        {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
+            i = bits - ( 8 - i );
+        }else
+            i += bits;
+        c += min;
+        if( c > max )
+            c = c - ( max + 1 ) + min;
+        cputc( c, decor );
+    }
+    free(buf);
+    return 0;
+}
+
+static
+int
+output_random( enum output_type type
+, int n
+, int decor
+){  switch(type)
+    { case ty_ascii:
+            if( output_random_single_range( type, n, decor, 0x21, 0x7e ))
+                return ~0;
+            break;
       case ty_lascii:
-	getrandom(&ch, 1);
-	ch &= 0x7f;
-	if (ch >= 0x21 && ch <= 0x7e && !(ch >= 'A' && ch <= 'Z')) {
-	  cputc(ch,decor); nchar--;
-	}
-	break;
-	
+            if( output_random_single_range( type, n, decor, 'A', 'Z' ))
+                return ~0;
+            break;
       case ty_uascii:
-	getrandom(&ch, 1);
-	ch &= 0x7f;
-	if (ch >= 0x21 && ch <= 0x7e && !(ch >= 'a' && ch <= 'z')) {
-	  cputc(ch,decor); nchar--;
-	}
-	break;
-	
+            if( output_random_single_range( type, n, decor, 'a', 'z' ))
+                return ~0;
+            break;
       case ty_anum:
-	getrandom(&ch, 1);
-	ch &= 0x7f;
-	if ( isalnum(ch) ) { cputc(ch,decor); nchar--; }
-	break;
-	
+        {   unsigned range = ( '9' - '0' + 1 ) + ( 'Z' - 'A' + 1 ) + ( 'z' - 'a' + 1 );
+            unsigned bits = bits_in_range( 0, range );
+            unsigned bytes = n * bits;
+            bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
+            unsigned char *buf, *buf_;
+            if( getrandom( &buf, bytes ))
+                return ~0;
+            buf_ = buf;
+            unsigned i = 0;
+            while( n-- )
+            {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
+                if( bits > 8 - i )
+                {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
+                    i = bits - ( 8 - i );
+                }else
+                    i += bits;
+                c += '0';
+                if( c > '9' )
+                {   c = c - ( '9' + 1 ) + 'A';
+                    if( c > 'Z' )
+                    {   c = c - ( 'Z' + 1 ) + 'a';
+                        if( c > 'z' )
+                        {   c = c - ( 'z' + 1 ) + '0';
+                            if( c > '9' )
+                            {   c = c - ( '9' + 1 ) + 'A';
+                                if( c > 'Z' )
+                                    c = c - ( 'Z' + 1 ) + 'a';
+                            }
+                        }
+                    }
+                }
+                cputc( c, decor );
+            }
+            free(buf);
+            break;
+        }
       case ty_lcase:
-	getrandom(&ch, 1);
-	ch &= 0x5f;
-	ch |= 0x20;
-	if ( isalnum(ch) ) { cputc(ch,decor); nchar--; }
-	break;
-	
+        {   unsigned range = ( '9' - '0' + 1 ) + ( 'z' - 'a' + 1 );
+            unsigned bits = bits_in_range( 0, range );
+            unsigned bytes = n * bits;
+            bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
+            unsigned char *buf, *buf_;
+            if( getrandom( &buf, bytes ))
+                return ~0;
+            buf_ = buf;
+            unsigned i = 0;
+            while( n-- )
+            {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
+                if( bits > 8 - i )
+                {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
+                    i = bits - ( 8 - i );
+                }else
+                    i += bits;
+                c += '0';
+                if( c > '9' )
+                {   c = c - ( '9' + 1 ) + 'a';
+                    if( c > 'z' )
+                    {   c = c - ( 'z' + 1 ) + '0';
+                        if( c > '9' )
+                            c = c - ( '9' + 1 ) + 'a';
+                    }
+                }
+                cputc( c, decor );
+            }
+            free(buf);
+            break;
+        }
       case ty_ucase:
-	getrandom(&ch, 1);
-	ch &= 0x5f;
-	ch |= ( ch < 0x40 ? 0x20 : 0x00 );
-	if ( isalnum(ch) ) { cputc(ch,decor); nchar--; }
-	break;
-	
+        {   unsigned range = ( '9' - '0' + 1 ) + ( 'Z' - 'A' + 1 );
+            unsigned bits = bits_in_range( 0, range );
+            unsigned bytes = n * bits;
+            bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
+            unsigned char *buf, *buf_;
+            if( getrandom( &buf, bytes ))
+                return ~0;
+            buf_ = buf;
+            unsigned i = 0;
+            while( n-- )
+            {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
+                if( bits > 8 - i )
+                {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
+                    i = bits - ( 8 - i );
+                }else
+                    i += bits;
+                c += '0';
+                if( c > '9' )
+                {   c = c - ( '9' + 1 ) + 'A';
+                    if( c > 'Z' )
+                    {   c = c - ( 'Z' + 1 ) + '0';
+                        if( c > '9' )
+                            c = c - ( '9' + 1 ) + 'A';
+                    }
+                }
+                cputc( c, decor );
+            }
+            free(buf);
+            break;
+        }
       case ty_alpha:
-	getrandom(&ch, 1);
-	ch &= 0x3f;
-	ch |= 0x40;
-	if ( isalpha(ch) ) { cputc(ch,decor); nchar--; }
-	break;
-	
+        {   unsigned range = ( 'Z' - 'A' + 1 ) + ( 'z' - 'a' + 1 );
+            unsigned bits = bits_in_range( 0, range );
+            unsigned bytes = n * bits;
+            bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
+            unsigned char *buf, *buf_;
+            if( getrandom( &buf, bytes ))
+                return ~0;
+            buf_ = buf;
+            unsigned i = 0;
+            while( n-- )
+            {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
+                if( bits > 8 - i )
+                {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
+                    i = bits - ( 8 - i );
+                }else
+                    i += bits;
+                c += 'A';
+                if( c > 'Z' )
+                {   c = c - ( 'Z' + 1 ) + 'a';
+                    if( c > 'z' )
+                    {   c = c - ( 'z' + 1 ) + 'A';
+                        if( c > 'Z' )
+                            c = c - ( 'Z' + 1 ) + 'a';
+                    }
+                }
+                cputc( c, decor );
+            }
+            free(buf);
+            break;
+        }
       case ty_alcase:
-	getrandom(&ch, 1);
-	ch &= 0x1f;
-	ch |= 0x60;
-	if ( isalpha(ch) ) { cputc(ch,decor); nchar--; }
-	break;
-	
+            if( output_random_single_range( type, n, decor, 'a', 'z' ))
+                return ~0;
+            break;
       case ty_aucase:
-	getrandom(&ch, 1);
-	ch &= 0x1f;
-	ch |= 0x40;
-	if ( isalpha(ch) ) { cputc(ch,decor); nchar--; }
-	break;
-	
+            if( output_random_single_range( type, n, decor, 'A', 'Z' ))
+                return ~0;
+            break;
       case ty_hex:
-	getrandom(&ch, 1);
-	if ( nchar == 1 ) { printf("%01x", ch & 0x0f); nchar--; }
-	else { printf("%02x", ch); nchar -= 2; }
+	//~ getrandom(&ch, 1);
+	//~ if ( nchar == 1 ) { printf("%01x", ch & 0x0f); nchar--; }
+	//~ else { printf("%02x", ch); nchar -= 2; }
 	break;
 	
       case ty_uhex:
-	getrandom(&ch, 1);
-	if ( nchar == 1 ) { printf("%01X", ch & 0x0f); nchar--; }
-	else { printf("%02X", ch); nchar -= 2; }
+	//~ getrandom(&ch, 1);
+	//~ if ( nchar == 1 ) { printf("%01X", ch & 0x0f); nchar--; }
+	//~ else { printf("%02X", ch); nchar -= 2; }
 	break;
 	
       case ty_dec:
-	getrandom(&ch, 1);
-	if ( decor && nchar > 1 && ch < 200 ) {
-	  ch %= 100;
-	  nchar -= 2;
-	  if ( ch > 0 || !nchar ) {
-	    printf("%d", ch);
-	    decor = 0;
-	  }
-	} else if ( nchar == 1 && ch < 250 ) {
-	  printf("%01d", ch % 10); nchar--;
-	} else if ( ch < 200 ) { printf("%02d", ch % 100); nchar -= 2; }
+	//~ getrandom(&ch, 1);
+	//~ if ( decor && nchar > 1 && ch < 200 ) {
+	  //~ ch %= 100;
+	  //~ nchar -= 2;
+	  //~ if ( ch > 0 || !nchar ) {
+	    //~ printf("%d", ch);
+	    //~ decor = 0;
+	  //~ }
+	//~ } else if ( nchar == 1 && ch < 250 ) {
+	  //~ printf("%01d", ch % 10); nchar--;
+	//~ } else if ( ch < 200 ) { printf("%02d", ch % 100); nchar -= 2; }
 	break;
 	
       case ty_oct:
-	getrandom(&ch, 1);
-	if ( nchar == 1 ) { printf("%01o", ch & 007); nchar--; }
-	else { printf("%02o", ch & 077); nchar -= 2; }
+	//~ getrandom(&ch, 1);
+	//~ if ( nchar == 1 ) { printf("%01o", ch & 007); nchar--; }
+	//~ else { printf("%02o", ch & 077); nchar -= 2; }
 	break;
 	
       case ty_binary:
-	getrandom(&ch, 1);
-	i = (nchar < 8) ? nchar : 8;
-	nchar -= i;
-	while ( i-- ) {
-	  putchar((ch & 1) + '0');
-	  ch >>= 1;
-	}
+	//~ getrandom(&ch, 1);
+	//~ i = (nchar < 8) ? nchar : 8;
+	//~ nchar -= i;
+	//~ while ( i-- ) {
+	  //~ putchar((ch & 1) + '0');
+	  //~ ch >>= 1;
+	//~ }
 	break;
 
       case ty_ip:
-	do {
-	  getrandom(&ch, 1);
-	} while (nchar == ichar && (ch-1U) >= 254);
-	printf("%s%u", (nchar == ichar) ? "" : ".", ch);
-	nchar--;
+	//~ do {
+	  //~ getrandom(&ch, 1);
+	//~ } while (nchar == ichar && (ch-1U) >= 254);
+	//~ printf("%s%u", (nchar == ichar) ? "" : ".", ch);
+	//~ nchar--;
 	break;
 
       case ty_mac:
       case ty_umac:
-	getrandom(&ch, 1);
-	if (nchar == ichar) {
-	  ch &= ~0x01;
-	  ch |= 0x02;
-	} else {
-	  putchar(':');
-	}
+	//~ getrandom(&ch, 1);
+	//~ if (nchar == ichar) {
+	  //~ ch &= ~0x01;
+	  //~ ch |= 0x02;
+	//~ } else {
+	  //~ putchar(':');
+	//~ }
 
-	printf(type == ty_umac ? "%02X" : "%02x", ch);
-	nchar--;
+	//~ printf(type == ty_umac ? "%02X" : "%02x", ch);
+	//~ nchar--;
 	break;
 
       case ty_uuid:
       case ty_uuuid:
-	getrandom(buf, 16);
-	for (i = 0; i < 16; i++) {
-	  ch = buf[i];
-	  switch (i) {
-	  case 4:
-	  case 10:
-	    putchar('-');
-	    break;
-	  case 6:
-	    ch = (ch & 0x0f) | 0x40; /* Version number */
-	    putchar('-');
-	    break;
-	  case 8:
-	    ch = (ch & 0x3f) | 0x80; /* By spec */
-	    putchar('-');
-	    break;
-	  default:
-	    break;
-	  }
-	  printf(type == ty_uuuid ? "%02X" : "%02x", ch);
-	}
-	if (--nchar)
-	  putchar(' ');
+	//~ getrandom(buf, 16);
+	//~ for (i = 0; i < 16; i++) {
+	  //~ ch = buf[i];
+	  //~ switch (i) {
+	  //~ case 4:
+	  //~ case 10:
+	    //~ putchar('-');
+	    //~ break;
+	  //~ case 6:
+	    //~ ch = (ch & 0x0f) | 0x40; /* Version number */
+	    //~ putchar('-');
+	    //~ break;
+	  //~ case 8:
+	    //~ ch = (ch & 0x3f) | 0x80; /* By spec */
+	    //~ putchar('-');
+	    //~ break;
+	  //~ default:
+	    //~ break;
+	  //~ }
+	  //~ printf(type == ty_uuuid ? "%02X" : "%02x", ch);
+	//~ }
+	//~ if (--nchar)
+	  //~ putchar(' ');
 	break;
-      }
   }
 }
 
@@ -365,9 +487,9 @@ int main(int argc, char *argv[])
 
   program = argv[0];
 
-  while ((opt = getopt_long(argc, argv, short_options,
+  while((opt = getopt_long(argc, argv, short_options,
 			    long_options, NULL)) != EOF) {
-    switch (opt) {
+    switch(opt) {
     case OPT_ASCII:		/* ASCII */
       type = ty_ascii;
       break;
@@ -447,18 +569,17 @@ int main(int argc, char *argv[])
       break;
     }
   }
-
-  for (i = optind; i < argc; i++) {
-    nchar = atoi(argv[i]);
-    if ( nchar < 1 )
-      usage(1);
-  }
-
+    if( optind != argc )
+    {   if( optind + 1 != argc )
+            usage(1);
+        nchar = atoi( argv[optind] );
+        if( !nchar )
+            usage(1);
+    }
   setrandom();
-
   /* Adjust type for monocasing */
-  if (monocase)
-    switch (type) {
+  if(monocase)
+    switch(type) {
     case ty_ascii:
     case ty_anum:
     case ty_alpha:
@@ -473,7 +594,7 @@ int main(int argc, char *argv[])
       break;
     }
 
-  if ( decor ) {
+  if(decor) {
     switch ( type ) {
     case ty_hex:
     case ty_uhex:
@@ -494,8 +615,8 @@ int main(int argc, char *argv[])
   output_random(type, nchar, decor);
 
   
-  if ( decor ) {
-    switch ( type ) {
+  if(decor) {
+    switch(type) {
     case ty_hex:
     case ty_uhex:
     case ty_oct:
@@ -510,5 +631,5 @@ int main(int argc, char *argv[])
 
   putchar('\n');
 
-  exit(0);
+  return 0;
 }
