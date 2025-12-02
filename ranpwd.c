@@ -25,10 +25,10 @@
 #include <fcntl.h>
 #include <ctype.h>
 #ifdef HAVE_GETOPT_H
-# include <getopt.h>
+#include <getopt.h>
 #endif
 
-static int ran_fd;		/* /dev/(u)random file descriptor if avail. */
+static int ran_fd;		    /* /dev/(u)random file descriptor if avail. */
 static int secure_source;	/* 1 if we should use /dev/random */
 const char *program;
 
@@ -90,6 +90,7 @@ static void usage(int err)
 	  LO("  --octal              ")"  -o  Octal number\n"
 	  LO("  --binary             ")"  -b  Binary number\n"
 	  LO("  --c                  ")"  -c  C language constant\n"
+	  LO("  --ip                 ")"  -i  IP address\n"
 	  LO("  --mac-address        ")"  -m  Ethernet MAC address\n"
 	  LO("  --mac-address --upper")"  -M  Upper case Ethernet MAC address\n"
 	  LO("  --uuid               ")"  -g  UUID/GUID\n"
@@ -383,96 +384,120 @@ output_random( enum output_type type
                 return ~0;
             break;
       case ty_hex:
-	//~ getrandom(&ch, 1);
-	//~ if ( nchar == 1 ) { printf("%01x", ch & 0x0f); nchar--; }
-	//~ else { printf("%02x", ch); nchar -= 2; }
-	break;
-	
+        {   unsigned r = n % 2;
+            n /= 2;
+            unsigned char *buf, *buf_;
+            if( getrandom( &buf, n ))
+                return ~0;
+            buf_ = buf;
+            while( n-- )
+            {   printf( "%02x", *buf_ );
+                buf_++;
+            }
+            if(r)
+                printf( "%01x", *buf_ );
+            free(buf);
+            break;
+        }
       case ty_uhex:
-	//~ getrandom(&ch, 1);
-	//~ if ( nchar == 1 ) { printf("%01X", ch & 0x0f); nchar--; }
-	//~ else { printf("%02X", ch); nchar -= 2; }
-	break;
-	
+        {   unsigned r = n % 2;
+            n /= 2;
+            unsigned char *buf, *buf_;
+            if( getrandom( &buf, n ))
+                return ~0;
+            buf_ = buf;
+            while( n-- )
+            {   printf( "%02X", *buf_ );
+                buf_++;
+            }
+            if(r)
+                printf( "%01X", *buf_ );
+            free(buf);
+            break;
+        }
       case ty_dec:
-	//~ getrandom(&ch, 1);
-	//~ if ( decor && nchar > 1 && ch < 200 ) {
-	  //~ ch %= 100;
-	  //~ nchar -= 2;
-	  //~ if ( ch > 0 || !nchar ) {
-	    //~ printf("%d", ch);
-	    //~ decor = 0;
-	  //~ }
-	//~ } else if ( nchar == 1 && ch < 250 ) {
-	  //~ printf("%01d", ch % 10); nchar--;
-	//~ } else if ( ch < 200 ) { printf("%02d", ch % 100); nchar -= 2; }
-	break;
-	
+            if( output_random_single_range( type, n, decor, '0', '9' ))
+                return ~0;
+            break;
       case ty_oct:
-	//~ getrandom(&ch, 1);
-	//~ if ( nchar == 1 ) { printf("%01o", ch & 007); nchar--; }
-	//~ else { printf("%02o", ch & 077); nchar -= 2; }
-	break;
-	
+            if( output_random_single_range( type, n, decor, '0', '7' ))
+                return ~0;
+            break;
       case ty_binary:
-	//~ getrandom(&ch, 1);
-	//~ i = (nchar < 8) ? nchar : 8;
-	//~ nchar -= i;
-	//~ while ( i-- ) {
-	  //~ putchar((ch & 1) + '0');
-	  //~ ch >>= 1;
-	//~ }
-	break;
-
+            if( output_random_single_range( type, n, decor, '0', '1' ))
+                return ~0;
+            break;
       case ty_ip:
-	//~ do {
-	  //~ getrandom(&ch, 1);
-	//~ } while (nchar == ichar && (ch-1U) >= 254);
-	//~ printf("%s%u", (nchar == ichar) ? "" : ".", ch);
-	//~ nchar--;
-	break;
-
+        {   unsigned bits = bits_in_range( 1, 254 );
+            unsigned bytes = n * bits;
+            bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
+            unsigned char *buf, *buf_;
+            if( getrandom( &buf, bytes ))
+                return ~0;
+            buf_ = buf;
+            unsigned i = 0;
+            while( n-- )
+            {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
+                if( bits > 8 - i )
+                {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
+                    i = bits - ( 8 - i );
+                }else
+                    i += bits;
+                c += 1;
+                if( c > 254 )
+                    c = c - ( 254 + 1 ) + 1;
+                printf( "%u", c );
+                if(n)
+                    putchar( '.' );
+            }
+            free(buf);
+            break;
+        }
       case ty_mac:
+        {   unsigned char *buf, *buf_;
+            if( getrandom( &buf, n ))
+                return ~0;
+            buf_ = buf;
+            while( n-- )
+            {   printf( "%02x", *buf_ );
+                buf_++;
+                if(n)
+                    putchar( ':' );
+            }
+            free(buf);
+            break;
+        }
       case ty_umac:
-	//~ getrandom(&ch, 1);
-	//~ if (nchar == ichar) {
-	  //~ ch &= ~0x01;
-	  //~ ch |= 0x02;
-	//~ } else {
-	  //~ putchar(':');
-	//~ }
-
-	//~ printf(type == ty_umac ? "%02X" : "%02x", ch);
-	//~ nchar--;
-	break;
-
+        {   unsigned char *buf, *buf_;
+            if( getrandom( &buf, n ))
+                return ~0;
+            buf_ = buf;
+            while( n-- )
+            {   printf( "%02X", *buf_ );
+                buf_++;
+                if(n)
+                    putchar( ':' );
+            }
+            free(buf);
+            break;
+        }
       case ty_uuid:
+        {   unsigned char *buf;
+            if( getrandom( &buf, 16 ))
+                return ~0;
+            printf( "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[1], buf[11], buf[12], buf[13], buf[14], buf[15] );
+            free(buf);
+            break;
+        }
       case ty_uuuid:
-	//~ getrandom(buf, 16);
-	//~ for (i = 0; i < 16; i++) {
-	  //~ ch = buf[i];
-	  //~ switch (i) {
-	  //~ case 4:
-	  //~ case 10:
-	    //~ putchar('-');
-	    //~ break;
-	  //~ case 6:
-	    //~ ch = (ch & 0x0f) | 0x40; /* Version number */
-	    //~ putchar('-');
-	    //~ break;
-	  //~ case 8:
-	    //~ ch = (ch & 0x3f) | 0x80; /* By spec */
-	    //~ putchar('-');
-	    //~ break;
-	  //~ default:
-	    //~ break;
-	  //~ }
-	  //~ printf(type == ty_uuuid ? "%02X" : "%02x", ch);
-	//~ }
-	//~ if (--nchar)
-	  //~ putchar(' ');
-	break;
-  }
+        {   unsigned char *buf;
+            if( getrandom( &buf, 16 ))
+                return ~0;
+            printf( "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[1], buf[11], buf[12], buf[13], buf[14], buf[15] );
+            free(buf);
+            break;
+        }
+    }
 }
 
 
@@ -485,151 +510,199 @@ int main(int argc, char *argv[])
   enum output_type type = ty_ascii;
   int i;
 
-  program = argv[0];
-
-  while((opt = getopt_long(argc, argv, short_options,
-			    long_options, NULL)) != EOF) {
-    switch(opt) {
-    case OPT_ASCII:		/* ASCII */
-      type = ty_ascii;
-      break;
-    case 'a':			/* Alphanum only */
-      type = ty_anum;
-      break;
-    case 'l':			/* Lower case alphanum */
-      type = ty_lcase;
-      break;
-    case 'u':			/* Upper case alphanum */
-      type = ty_ucase;
-      break;
-    case 'x':			/* Hexadecimal number */
-      type = ty_hex;
-      break;
-    case 'X':			/* Upper case hex number */
-      type = ty_uhex;
-      break;
-    case 'd':			/* Decimal number */
-      type = ty_dec;
-      break;
-    case 'o':			/* Octal number */
-      type = ty_oct;
-      break;
-    case 'b':		     	/* Binary number (for Bynar saboteurs) */
-      type = ty_binary;
-      break;
-    case 'A':			/* Alphabetic */
-      type = ty_alpha;
-      break;
-    case 'L':			/* Lower case alphabetic */
-      type = ty_alcase;
-      break;
-    case 'U':			/* Upper case alphabetic */
-      type = ty_aucase;
-      break;
-    case 'i':			/* IP address suffix */
-      type = ty_ip;
-      nchar = 2;
-      break;
-    case 'm':			/* Lower case MAC address */
-      type = ty_mac;
-      nchar = 6;
-      break;
-    case 'M':			/* Upper case MAC address */
-      type = ty_umac;
-      nchar = 6;
-      break;
-    case 'g':			/* UUID/GUID */
-      type = ty_uuid;
-      nchar = 1;
-      break;
-    case 'G':			/* UUID/GUID */
-      type = ty_uuuid;
-      nchar = 1;
-      break;
-    case 's':		       /* Use /dev/random, not /dev/urandom */
-      secure_source = 1;
-      break;
-    case 'c':			/* C constant */
-      decor = 1;
-      break;
-    case OPT_LOWER:		/* --lower */
-      monocase = 1;
-      break;
-    case OPT_UPPER:		/* --upper */
-      monocase = 2;
-      break;
-    case 'h':
-      usage(0);
-      break;
-    case 'V':
-      printf("%s %s\n", PACKAGE_NAME, PACKAGE_VERSION);
-      exit(0);
-    default:
-      usage(1);
-      break;
-    }
-  }
+    program = argv[0];
+    _Bool type_selected = false;
+    while(( opt = getopt_long(argc, argv, short_options, long_options, NULL)) != EOF )
+        switch(opt)
+        { case OPT_ASCII:		/* ASCII */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                break;
+          case 'a':			/* Alphanum only */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_anum;
+                break;
+          case 'l':			/* Lower case alphanum */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_lcase;
+                break;
+          case 'u':			/* Upper case alphanum */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_ucase;
+                break;
+          case 'x':			/* Hexadecimal number */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_hex;
+                break;
+          case 'X':			/* Upper case hex number */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_uhex;
+                break;
+          case 'd':			/* Decimal number */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_dec;
+                break;
+          case 'o':			/* Octal number */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_oct;
+                break;
+          case 'b':		     	/* Binary number (for Bynar saboteurs) */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_binary;
+                break;
+          case 'A':			/* Alphabetic */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_alpha;
+                break;
+          case 'L':			/* Lower case alphabetic */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_alcase;
+                break;
+          case 'U':			/* Upper case alphabetic */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_aucase;
+                break;
+          case 'i':			/* IP address suffix */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_ip;
+                nchar = 4;
+                break;
+          case 'm':			/* Lower case MAC address */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_mac;
+                nchar = 6;
+                break;
+          case 'M':			/* Upper case MAC address */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_umac;
+                nchar = 6;
+                break;
+          case 'g':			/* UUID/GUID */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_uuid;
+                break;
+          case 'G':			/* UUID/GUID */
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_uuuid;
+                break;
+          case 's':		       /* Use /dev/random, not /dev/urandom */
+                secure_source = 1;
+                break;
+          case 'c':			/* C constant */
+                decor = 1;
+                break;
+          case OPT_LOWER:		/* --lower */
+                monocase = 1;
+                break;
+          case OPT_UPPER:		/* --upper */
+                monocase = 2;
+                break;
+          case 'h':
+                usage(0);
+                break;
+          case 'V':
+                printf( "%s %s\n", PACKAGE_NAME, PACKAGE_VERSION );
+                exit(0);
+          default:
+                usage(1);
+                break;
+        }
     if( optind != argc )
     {   if( optind + 1 != argc )
             usage(1);
         nchar = atoi( argv[optind] );
-        if( !nchar )
+        if( !nchar
+        || ( type == ty_ip
+          && nchar > 4
+        )
+        || (( type == ty_mac
+            || type == ty_umac
+          )
+          && nchar > 6
+        )
+        || type == ty_uuid
+        || type == ty_uuuid
+        )
             usage(1);
     }
-  setrandom();
-  /* Adjust type for monocasing */
-  if(monocase)
-    switch(type) {
-    case ty_ascii:
-    case ty_anum:
-    case ty_alpha:
-      type += monocase;
-      break;
-    case ty_hex:
-    case ty_mac:
-    case ty_uuid:
-      type += monocase-1;
-      break;
-    default:
-      break;
-    }
-
-  if(decor) {
-    switch ( type ) {
-    case ty_hex:
-    case ty_uhex:
-      putchar('0'); putchar('x');
-      break;
-    case ty_oct:
-      putchar('0');
-      break;
-    case ty_dec:
-      /* Do nothing - handled later */
-      break;
-    default:
-      putchar('\"');
-      break;
-    }
-  }
-
-  output_random(type, nchar, decor);
-
-  
-  if(decor) {
-    switch(type) {
-    case ty_hex:
-    case ty_uhex:
-    case ty_oct:
-    case ty_dec:
-      /* Do nothing */
-      break;
-    default:
-      putchar('\"');
-      break;
-    }
-  }
-
-  putchar('\n');
-
-  return 0;
+    setrandom();
+    /* Adjust type for monocasing */
+    if(monocase)
+        switch(type)
+        { case ty_ascii:
+          case ty_anum:
+          case ty_alpha:
+                type += monocase;
+                break;
+          case ty_hex:
+          case ty_mac:
+          case ty_uuid:
+                type += monocase-1;
+                break;
+        }
+    if(decor)
+        switch(type)
+        { case ty_hex:
+          case ty_uhex:
+                putchar('0');
+                putchar('x');
+                break;
+          case ty_oct:
+                putchar('0');
+                break;
+          case ty_dec:
+                /* Do nothing - handled later */
+                break;
+          default:
+                putchar('\"');
+                break;
+        }
+    output_random(type, nchar, decor);
+    if(decor)
+        switch(type)
+        { case ty_hex:
+          case ty_uhex:
+          case ty_oct:
+          case ty_dec:
+                /* Do nothing */
+                break;
+          default:
+                putchar('\"');
+                break;
+        }
+    putchar('\n');
+    return 0;
 }
