@@ -25,6 +25,8 @@ add_executable(${PROJECT_NAME} ${PROJECT_NAME}.c)
 ###############################################################################
 # Install rules
 
+set(CMAKE_INSTALL_PREFIX /usr)
+
 install(
   TARGETS ${PROJECT_NAME}
   DESTINATION ${CMAKE_INSTALL_BINDIR}
