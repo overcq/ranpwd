@@ -428,15 +428,15 @@ output_random( enum output_type type
                 return ~0;
             break;
       case ty_ip:
-        {   unsigned bits = bits_in_range( 1, 254 );
+        {   unsigned bits = bits_in_range( 0, 255 );
             unsigned bytes = n * bits;
             bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
             unsigned char *buf, *buf_;
             if( getrandom( &buf, bytes ))
                 return ~0;
             buf_ = buf;
-            unsigned i = 0;
-            while( n-- )
+            unsigned i = 0, n_ = n;
+            while( n_-- )
             {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
                 if( bits > 8 - i )
                 {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
@@ -444,10 +444,16 @@ output_random( enum output_type type
                 }else
                     i += bits;
                 c += 1;
-                if( c > 254 )
-                    c = c - ( 254 + 1 ) + 1;
+                if( !n_ )
+                    if( !c )
+                        c == 1;
+                    else if( c > 254 )
+                        c = c - ( 254 + 1 ) + 1;
+                else if( n_ == n - 1 )
+                    if( !c )
+                        c == 1;
                 printf( "%u", c );
-                if(n)
+                if( n_ )
                     putchar( '.' );
             }
             free(buf);
