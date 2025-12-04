@@ -443,7 +443,6 @@ output_random( enum output_type type
                     i = bits - ( 8 - i );
                 }else
                     i += bits;
-                c += 1;
                 if( !n_ )
                     if( !c )
                         c == 1;
