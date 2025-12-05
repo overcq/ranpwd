@@ -247,7 +247,7 @@ output_random( enum output_type type
             break;
       case ty_anum:
         {   unsigned range = ( '9' - '0' + 1 ) + ( 'Z' - 'A' + 1 ) + ( 'z' - 'a' + 1 );
-            unsigned bits = bits_in_range( 0, range );
+            unsigned bits = bits_in_range( 0, range - 1 );
             size_t bytes = n * bits;
             bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
             unsigned char *buf, *buf_;
@@ -284,7 +284,7 @@ output_random( enum output_type type
         }
       case ty_lcase:
         {   unsigned range = ( '9' - '0' + 1 ) + ( 'z' - 'a' + 1 );
-            unsigned bits = bits_in_range( 0, range );
+            unsigned bits = bits_in_range( 0, range - 1 );
             size_t bytes = n * bits;
             bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
             unsigned char *buf, *buf_;
@@ -315,7 +315,7 @@ output_random( enum output_type type
         }
       case ty_ucase:
         {   unsigned range = ( '9' - '0' + 1 ) + ( 'Z' - 'A' + 1 );
-            unsigned bits = bits_in_range( 0, range );
+            unsigned bits = bits_in_range( 0, range - 1 );
             size_t bytes = n * bits;
             bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
             unsigned char *buf, *buf_;
@@ -346,7 +346,7 @@ output_random( enum output_type type
         }
       case ty_alpha:
         {   unsigned range = ( 'Z' - 'A' + 1 ) + ( 'z' - 'a' + 1 );
-            unsigned bits = bits_in_range( 0, range );
+            unsigned bits = bits_in_range( 0, range - 1 );
             size_t bytes = n * bits;
             bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
             unsigned char *buf, *buf_;
