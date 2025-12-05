@@ -41,7 +41,7 @@ enum extended_options {
 static const char *short_options = "aluxXdobALUimgGMschV";
 #ifdef HAVE_GETOPT_LONG
 const struct option long_options[] = {
-  { "ascii",            0, 0, OPT_ASCII },
+  { "ascii",        0, 0, OPT_ASCII },
   { "alphanum",		0, 0, 'a' },
   { "lc-alphanum",	0, 0, 'l' },
   { "uc-alphanum",	0, 0, 'u' },
@@ -54,22 +54,22 @@ const struct option long_options[] = {
   { "uc-alpha",		0, 0, 'U' },
   { "upper",		0, 0, OPT_UPPER },
   { "lower",		0, 0, OPT_LOWER },
-  { "ip",               0, 0, 'i' },
-  { "mac-address",      0, 0, 'm' },
-  { "guid",             0, 0, 'g' },
-  { "uuid",             0, 0, 'g' },
-  { "uc-guid",          0, 0, 'G' },
-  { "uc-uuid",          0, 0, 'G' },
-  { "secure",           0, 0, 's' },
-  { "c",		0, 0, 'c' },
-  { "help",             0, 0, 'h' },
-  { "version",          0, 0, 'V' },
+  { "ip",           0, 0, 'i' },
+  { "mac-address",  0, 0, 'm' },
+  { "guid",         0, 0, 'g' },
+  { "uuid",         0, 0, 'g' },
+  { "uc-guid",      0, 0, 'G' },
+  { "uc-uuid",      0, 0, 'G' },
+  { "secure",       0, 0, 's' },
+  { "c",		    0, 0, 'c' },
+  { "help",         0, 0, 'h' },
+  { "version",      0, 0, 'V' },
   { 0, 0, 0, 0 }
 };
-# define LO(X) X
+#define LO(X) X
 #else
-# define getopt_long(C,V,O,L,I) getopt(C,V,O)
-# define LO(X)
+#define getopt_long(C,V,O,L,I) getopt(C,V,O)
+#define LO(X)
 #endif
 
 static void usage(int err)
@@ -97,7 +97,7 @@ static void usage(int err)
 	  LO("  --uuid --upper       ")"  -G  Upper case UUID/GUID\n"
 	  LO("  --secure             ")"  -s  Slower but more secure\n"
 	  LO("  --help               ")"  -h  Show this message\n"
-	  LO("  --version            ")"  -v  Display program version\n"
+	  LO("  --version            ")"  -V  Display program version\n"
 	  , PACKAGE_NAME, PACKAGE_VERSION, program);
   exit(err);
 }
@@ -204,7 +204,7 @@ output_random_single_range( enum output_type type
 , unsigned char min
 , unsigned char max
 ){  unsigned bits = bits_in_range( min, max );
-    unsigned bytes = n * bits;
+    size_t bytes = n * bits;
     bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
     unsigned char *buf, *buf_;
     if( getrandom( &buf, bytes ))
@@ -248,7 +248,7 @@ output_random( enum output_type type
       case ty_anum:
         {   unsigned range = ( '9' - '0' + 1 ) + ( 'Z' - 'A' + 1 ) + ( 'z' - 'a' + 1 );
             unsigned bits = bits_in_range( 0, range );
-            unsigned bytes = n * bits;
+            size_t bytes = n * bits;
             bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
             unsigned char *buf, *buf_;
             if( getrandom( &buf, bytes ))
@@ -285,7 +285,7 @@ output_random( enum output_type type
       case ty_lcase:
         {   unsigned range = ( '9' - '0' + 1 ) + ( 'z' - 'a' + 1 );
             unsigned bits = bits_in_range( 0, range );
-            unsigned bytes = n * bits;
+            size_t bytes = n * bits;
             bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
             unsigned char *buf, *buf_;
             if( getrandom( &buf, bytes ))
@@ -316,7 +316,7 @@ output_random( enum output_type type
       case ty_ucase:
         {   unsigned range = ( '9' - '0' + 1 ) + ( 'Z' - 'A' + 1 );
             unsigned bits = bits_in_range( 0, range );
-            unsigned bytes = n * bits;
+            size_t bytes = n * bits;
             bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
             unsigned char *buf, *buf_;
             if( getrandom( &buf, bytes ))
@@ -347,7 +347,7 @@ output_random( enum output_type type
       case ty_alpha:
         {   unsigned range = ( 'Z' - 'A' + 1 ) + ( 'z' - 'a' + 1 );
             unsigned bits = bits_in_range( 0, range );
-            unsigned bytes = n * bits;
+            size_t bytes = n * bits;
             bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
             unsigned char *buf, *buf_;
             if( getrandom( &buf, bytes ))
@@ -429,7 +429,7 @@ output_random( enum output_type type
             break;
       case ty_ip:
         {   unsigned bits = bits_in_range( 0, 255 );
-            unsigned bytes = n * bits;
+            size_t bytes = n * bits;
             bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
             unsigned char *buf, *buf_;
             if( getrandom( &buf, bytes ))
@@ -509,7 +509,7 @@ output_random( enum output_type type
 int main(int argc, char *argv[])
 {
   int opt;
-  int nchar = 8;		/* Characters wanted */
+  int n = 8;		/* Characters wanted */
   int decor = 0;		/* Precede hex numbers with 0x, oct with 0 */
   int monocase = 0;		/* 1 for lower, 2 for upper */
   enum output_type type = ty_ascii;
@@ -524,43 +524,43 @@ int main(int argc, char *argv[])
                     usage(1);
                 type_selected = true;
                 break;
-          case 'a':			/* Alphanum only */
+          case 'a':			    /* Alphanum only */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_anum;
                 break;
-          case 'l':			/* Lower case alphanum */
+          case 'l':			    /* Lower case alphanum */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_lcase;
                 break;
-          case 'u':			/* Upper case alphanum */
+          case 'u':			    /* Upper case alphanum */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_ucase;
                 break;
-          case 'x':			/* Hexadecimal number */
+          case 'x':			    /* Hexadecimal number */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_hex;
                 break;
-          case 'X':			/* Upper case hex number */
+          case 'X':			    /* Upper case hex number */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_uhex;
                 break;
-          case 'd':			/* Decimal number */
+          case 'd':			    /* Decimal number */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_dec;
                 break;
-          case 'o':			/* Octal number */
+          case 'o':			    /* Octal number */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
@@ -572,61 +572,61 @@ int main(int argc, char *argv[])
                 type_selected = true;
                 type = ty_binary;
                 break;
-          case 'A':			/* Alphabetic */
+          case 'A':			    /* Alphabetic */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_alpha;
                 break;
-          case 'L':			/* Lower case alphabetic */
+          case 'L':			    /* Lower case alphabetic */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_alcase;
                 break;
-          case 'U':			/* Upper case alphabetic */
+          case 'U':			    /* Upper case alphabetic */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_aucase;
                 break;
-          case 'i':			/* IP address suffix */
+          case 'i':			    /* IP address suffix */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_ip;
-                nchar = 4;
+                n = 4;
                 break;
-          case 'm':			/* Lower case MAC address */
+          case 'm':			    /* Lower case MAC address */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_mac;
-                nchar = 6;
+                n = 6;
                 break;
-          case 'M':			/* Upper case MAC address */
+          case 'M':			    /* Upper case MAC address */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_umac;
-                nchar = 6;
+                n = 6;
                 break;
-          case 'g':			/* UUID/GUID */
+          case 'g':			    /* UUID/GUID */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_uuid;
                 break;
-          case 'G':			/* UUID/GUID */
+          case 'G':			    /* UUID/GUID */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_uuuid;
                 break;
-          case 's':		       /* Use /dev/random, not /dev/urandom */
+          case 's':		        /* Use /dev/random, not /dev/urandom */
                 secure_source = 1;
                 break;
-          case 'c':			/* C constant */
+          case 'c':			    /* C constant */
                 decor = 1;
                 break;
           case OPT_LOWER:		/* --lower */
@@ -648,15 +648,15 @@ int main(int argc, char *argv[])
     if( optind != argc )
     {   if( optind + 1 != argc )
             usage(1);
-        nchar = atoi( argv[optind] );
-        if( !nchar
+        n = atoi( argv[optind] );
+        if( !n
         || ( type == ty_ip
-          && nchar > 4
+          && n > 4
         )
         || (( type == ty_mac
             || type == ty_umac
           )
-          && nchar > 6
+          && n > 6
         )
         || type == ty_uuid
         || type == ty_uuuid
@@ -695,7 +695,7 @@ int main(int argc, char *argv[])
                 putchar('\"');
                 break;
         }
-    output_random(type, nchar, decor);
+    output_random(type, n, decor);
     if(decor)
         switch(type)
         { case ty_hex:

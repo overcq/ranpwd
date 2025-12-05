@@ -1,5 +1,10 @@
-cmake_minimum_required(VERSION 3.0)
-project(ranpwd LANGUAGES C VERSION 2.0)
+cmake_minimum_required(VERSION 3.0...4.2)
+project(ranpwd
+    VERSION 2.0
+    DESCRIPTION "Simple password generator"
+    HOMEPAGE_URL https://github.com/overcq/ranpwd
+    LANGUAGES C
+)
 
 include(CheckFunctionExists)
 include(CheckIncludeFiles)
@@ -12,7 +17,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 check_include_files("getopt.h" HAVE_GETOPT_H)
 if(HAVE_GETOPT_H)
-  check_function_exists(getopt_long HAVE_GETOPT_LONG)
+    check_function_exists(getopt_long HAVE_GETOPT_LONG)
 endif()
 
 ###############################################################################
@@ -28,11 +33,11 @@ add_executable(${PROJECT_NAME} ${PROJECT_NAME}.c)
 set(CMAKE_INSTALL_PREFIX /usr)
 
 install(
-  TARGETS ${PROJECT_NAME}
-  DESTINATION ${CMAKE_INSTALL_BINDIR}
+    TARGETS ${PROJECT_NAME}
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
 install(
-  FILES ${PROJECT_NAME}.1
-  DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+    FILES ${PROJECT_NAME}.1
+    DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
 )
