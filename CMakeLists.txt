@@ -25,7 +25,7 @@ endif()
 
 configure_file(config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
-add_executable(${PROJECT_NAME} ${PROJECT_NAME}.c)
+add_executable(${PROJECT_NAME} main.c random.c)
 
 ###############################################################################
 # Install rules

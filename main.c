@@ -2,7 +2,7 @@
  *   
  *   Copyright 1994-2008 H. Peter Anvin - All Rights Reserved
  *
- *   This program is free software; you can redistribute it and/or modify
+ *   This E_main_S_program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
  *   the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
  *   Boston MA 02110-1301, USA; either version 3 of the License, or
@@ -17,20 +17,22 @@
 
 #include "config.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <ctype.h>
 #ifdef HAVE_GETOPT_H
 #include <getopt.h>
 #endif
 
-static int ran_fd;		    /* /dev/(u)random file descriptor if avail. */
-static int secure_source;	/* 1 if we should use /dev/random */
-const char *program;
+#include "main.h"
+#include "random.h"
+
+extern _Bool E_random_S_secure_source;
+
+const char *E_main_S_program;
 
 enum extended_options {
   OPT_UPPER = 256,
@@ -97,67 +99,9 @@ static void usage(int err)
 	  LO("  --uuid --upper       ")"  -G  Upper case UUID/GUID\n"
 	  LO("  --secure             ")"  -s  Slower but more secure\n"
 	  LO("  --help               ")"  -h  Show this message\n"
-	  LO("  --version            ")"  -V  Display program version\n"
-	  , PACKAGE_NAME, PACKAGE_VERSION, program);
+	  LO("  --version            ")"  -V  Display E_main_S_program version\n"
+	  , PACKAGE_NAME, PACKAGE_VERSION, E_main_S_program);
   exit(err);
-}
-
-/*
- * setrandom(): Attempt to open /dev/(u)random if available, otherwise call
- *              srand()
- */
-static void setrandom(void)
-{   ran_fd = open( secure_source ? "/dev/random" : "/dev/urandom", O_RDONLY );
-    if( !~ran_fd )
-	{   if( secure_source )
-	    {   fprintf(stderr, "%s: cannot open /dev/random\n", program);
-            exit(1);
-	    }
-        else
-            fprintf(stderr, "%s: warning: cannot open /dev/urandom\n", program);
-        time_t t;
-        time( &t );
-        pid_t pid = getpid();
-        srand( t ^ pid );		/* As secure as we can get... */
-	}
-}
-
-/*
- * getrandom(): Get random bytes
- */
-static
-int
-getrandom( unsigned char **buf
-, size_t n
-){  unsigned char *buf_ = malloc(n);
-    if( !buf_ )
-        return ~0;
-    *buf = buf_;
-    if( ~ran_fd )
-        while(n)
-        {   int i = read( ran_fd, buf_, n );
-            if( !~i )
-            {   free( *buf );
-                return i;
-            }
-            n -= i;
-            buf_ += n;
-        }
-    else
-    {   if( RAND_MAX >= ( 2U << 16 ) - 1 )
-        {   _Bool half = n % 2;
-            n /= 2;
-            while( n-- )
-            {   *( unsigned short * )buf_ = ( unsigned short )rand();
-                buf_ += 2;
-            }
-            if(half)
-                *buf_ = ( unsigned char )rand();
-        }else
-            while( n-- )
-                *buf_++ = ( unsigned char )rand();
-    }  
-    return 0;
 }
 
 /*
@@ -193,7 +137,7 @@ static
 int
 bits_in_range( unsigned min
 , unsigned max
-){  return sizeof(unsigned) * 8 - __builtin_clz( max - min + 1 );
+){  return sizeof(unsigned) * 8 - __builtin_clz( max - min + 1 - 1 );
 }
 
 static
@@ -204,26 +148,15 @@ output_random_single_range( enum output_type type
 , unsigned char min
 , unsigned char max
 ){  unsigned bits = bits_in_range( min, max );
-    size_t bytes = n * bits;
-    bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
-    unsigned char *buf, *buf_;
-    if( getrandom( &buf, bytes ))
+    if( E_random_I_prepare_data( n * bits ))
         return ~0;
-    buf_ = buf;
-    unsigned i = 0;
     while( n-- )
-    {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
-        if( bits > 8 - i )
-        {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
-            i = bits - ( 8 - i );
-        }else
-            i += bits;
+    {   unsigned char c = E_random_R_bits(bits);
         c += min;
         if( c > max )
             c = c - ( max + 1 ) + min;
         cputc( c, decor );
     }
-    free(buf);
     return 0;
 }
 
@@ -248,20 +181,10 @@ output_random( enum output_type type
       case ty_anum:
         {   unsigned range = ( '9' - '0' + 1 ) + ( 'Z' - 'A' + 1 ) + ( 'z' - 'a' + 1 );
             unsigned bits = bits_in_range( 0, range - 1 );
-            size_t bytes = n * bits;
-            bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
-            unsigned char *buf, *buf_;
-            if( getrandom( &buf, bytes ))
+            if( E_random_I_prepare_data( n * bits ))
                 return ~0;
-            buf_ = buf;
-            unsigned i = 0;
             while( n-- )
-            {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
-                if( bits > 8 - i )
-                {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
-                    i = bits - ( 8 - i );
-                }else
-                    i += bits;
+            {   unsigned char c = E_random_R_bits(bits);
                 c += '0';
                 if( c > '9' )
                 {   c = c - ( '9' + 1 ) + 'A';
@@ -279,26 +202,15 @@ output_random( enum output_type type
                 }
                 cputc( c, decor );
             }
-            free(buf);
             break;
         }
       case ty_lcase:
         {   unsigned range = ( '9' - '0' + 1 ) + ( 'z' - 'a' + 1 );
             unsigned bits = bits_in_range( 0, range - 1 );
-            size_t bytes = n * bits;
-            bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
-            unsigned char *buf, *buf_;
-            if( getrandom( &buf, bytes ))
+            if( E_random_I_prepare_data( n * bits ))
                 return ~0;
-            buf_ = buf;
-            unsigned i = 0;
             while( n-- )
-            {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
-                if( bits > 8 - i )
-                {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
-                    i = bits - ( 8 - i );
-                }else
-                    i += bits;
+            {   unsigned char c = E_random_R_bits(bits);
                 c += '0';
                 if( c > '9' )
                 {   c = c - ( '9' + 1 ) + 'a';
@@ -310,26 +222,15 @@ output_random( enum output_type type
                 }
                 cputc( c, decor );
             }
-            free(buf);
             break;
         }
       case ty_ucase:
         {   unsigned range = ( '9' - '0' + 1 ) + ( 'Z' - 'A' + 1 );
             unsigned bits = bits_in_range( 0, range - 1 );
-            size_t bytes = n * bits;
-            bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
-            unsigned char *buf, *buf_;
-            if( getrandom( &buf, bytes ))
+            if( E_random_I_prepare_data( n * bits ))
                 return ~0;
-            buf_ = buf;
-            unsigned i = 0;
             while( n-- )
-            {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
-                if( bits > 8 - i )
-                {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
-                    i = bits - ( 8 - i );
-                }else
-                    i += bits;
+            {   unsigned char c = E_random_R_bits(bits);
                 c += '0';
                 if( c > '9' )
                 {   c = c - ( '9' + 1 ) + 'A';
@@ -341,26 +242,15 @@ output_random( enum output_type type
                 }
                 cputc( c, decor );
             }
-            free(buf);
             break;
         }
       case ty_alpha:
         {   unsigned range = ( 'Z' - 'A' + 1 ) + ( 'z' - 'a' + 1 );
             unsigned bits = bits_in_range( 0, range - 1 );
-            size_t bytes = n * bits;
-            bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
-            unsigned char *buf, *buf_;
-            if( getrandom( &buf, bytes ))
+            if( E_random_I_prepare_data( n * bits ))
                 return ~0;
-            buf_ = buf;
-            unsigned i = 0;
             while( n-- )
-            {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
-                if( bits > 8 - i )
-                {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
-                    i = bits - ( 8 - i );
-                }else
-                    i += bits;
+            {   unsigned char c = E_random_R_bits(bits);
                 c += 'A';
                 if( c > 'Z' )
                 {   c = c - ( 'Z' + 1 ) + 'a';
@@ -372,7 +262,6 @@ output_random( enum output_type type
                 }
                 cputc( c, decor );
             }
-            free(buf);
             break;
         }
       case ty_alcase:
@@ -384,35 +273,17 @@ output_random( enum output_type type
                 return ~0;
             break;
       case ty_hex:
-        {   unsigned r = n % 2;
-            n /= 2;
-            unsigned char *buf, *buf_;
-            if( getrandom( &buf, n ))
+        {   if( E_random_I_prepare_data( n * 4 ))
                 return ~0;
-            buf_ = buf;
             while( n-- )
-            {   printf( "%02x", *buf_ );
-                buf_++;
-            }
-            if(r)
-                printf( "%01x", *buf_ );
-            free(buf);
+                printf( "%01x", E_random_R_bits(4) );
             break;
         }
       case ty_uhex:
-        {   unsigned r = n % 2;
-            n /= 2;
-            unsigned char *buf, *buf_;
-            if( getrandom( &buf, n ))
+        {   if( E_random_I_prepare_data( n * 4 ))
                 return ~0;
-            buf_ = buf;
             while( n-- )
-            {   printf( "%02X", *buf_ );
-                buf_++;
-            }
-            if(r)
-                printf( "%01X", *buf_ );
-            free(buf);
+                printf( "%01X", E_random_R_bits(4) );
             break;
         }
       case ty_dec:
@@ -429,20 +300,11 @@ output_random( enum output_type type
             break;
       case ty_ip:
         {   unsigned bits = bits_in_range( 0, 255 );
-            size_t bytes = n * bits;
-            bytes = bytes / 8 + ( n % 8 ? 1 : 0 );
-            unsigned char *buf, *buf_;
-            if( getrandom( &buf, bytes ))
+            if( E_random_I_prepare_data( n * bits ))
                 return ~0;
-            buf_ = buf;
-            unsigned i = 0, n_ = n;
+            unsigned n_ = n;
             while( n_-- )
-            {   unsigned char c = ( *buf_ >> i ) & (( 1 << bits ) - 1 );
-                if( bits > 8 - i )
-                {   c |= ( *++buf_ & (( 1 << ( bits - ( 8 - i ))) - 1 )) << ( 8 - i );
-                    i = bits - ( 8 - i );
-                }else
-                    i += bits;
+            {   unsigned char c = E_random_R_bits(bits);
                 if( !n_ )
                     if( !c )
                         c == 1;
@@ -455,51 +317,38 @@ output_random( enum output_type type
                 if( n_ )
                     putchar( '.' );
             }
-            free(buf);
             break;
         }
       case ty_mac:
-        {   unsigned char *buf, *buf_;
-            if( getrandom( &buf, n ))
+        {   if( E_random_I_prepare_data( n * 8 ))
                 return ~0;
-            buf_ = buf;
             while( n-- )
-            {   printf( "%02x", *buf_ );
-                buf_++;
+            {   printf( "%02x", E_random_R_bits(8) );
                 if(n)
                     putchar( ':' );
             }
-            free(buf);
             break;
         }
       case ty_umac:
-        {   unsigned char *buf, *buf_;
-            if( getrandom( &buf, n ))
+        {   if( E_random_I_prepare_data( n * 8 ))
                 return ~0;
-            buf_ = buf;
             while( n-- )
-            {   printf( "%02X", *buf_ );
-                buf_++;
+            {   printf( "%02X", E_random_R_bits(8) );
                 if(n)
                     putchar( ':' );
             }
-            free(buf);
             break;
         }
       case ty_uuid:
-        {   unsigned char *buf;
-            if( getrandom( &buf, 16 ))
+        {   if( E_random_I_prepare_data( 16 * 8 ))
                 return ~0;
-            printf( "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[1], buf[11], buf[12], buf[13], buf[14], buf[15] );
-            free(buf);
+            printf( "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8) );
             break;
         }
       case ty_uuuid:
-        {   unsigned char *buf;
-            if( getrandom( &buf, 16 ))
+        {   if( E_random_I_prepare_data( 16 * 8 ))
                 return ~0;
-            printf( "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[1], buf[11], buf[12], buf[13], buf[14], buf[15] );
-            free(buf);
+            printf( "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X", E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8), E_random_R_bits(8) );
             break;
         }
     }
@@ -515,7 +364,7 @@ int main(int argc, char *argv[])
   enum output_type type = ty_ascii;
   int i;
 
-    program = argv[0];
+    E_main_S_program = argv[0];
     _Bool type_selected = false;
     while(( opt = getopt_long(argc, argv, short_options, long_options, NULL)) != EOF )
         switch(opt)
@@ -624,7 +473,7 @@ int main(int argc, char *argv[])
                 type = ty_uuuid;
                 break;
           case 's':		        /* Use /dev/random, not /dev/urandom */
-                secure_source = 1;
+                E_random_S_secure_source = true;
                 break;
           case 'c':			    /* C constant */
                 decor = 1;
@@ -663,7 +512,7 @@ int main(int argc, char *argv[])
         )
             usage(1);
     }
-    setrandom();
+    E_random_M();
     /* Adjust type for monocasing */
     if(monocase)
         switch(type)
