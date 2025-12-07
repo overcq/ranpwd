@@ -78,7 +78,7 @@ static void usage(int err)
 {
   fprintf(stderr,
 	  "%s %s\n"
-	  "Usage: %s [options] [length]\n"
+	  "Usage: %s [options] [length [count]]\n"
 	  LO("  --ascii              " "      Any ASCII characters\n")
 	  LO("  --alphanum           ")"  -a  Alphanumeric\n"
 	  LO("  --alphanum --lower   ")"  -l  Lower case alphanumeric\n"
@@ -109,17 +109,18 @@ static void usage(int err)
  *
  * putchar(), with option to escape characters that have to be escaped in C
  */
-static void cputc(int ch, int esc) {
-  if(esc) {
-    switch ( ch ) {
-    case '\"': case '\\':
-    case '\'':
-      putchar('\\');
-    default:
-      break;
-    }
-  }
-  putchar(ch);
+static
+void
+cputc( int c
+, int esc
+){  if(esc)
+        switch(c)
+        { case '\"':
+          case '\\':
+          case '\'':
+            putchar('\\');
+        }
+    putchar(c);
 }
 
 enum output_type {
@@ -150,19 +151,19 @@ output_random_single_range( enum output_type type
 ){  unsigned bits = bits_in_range( min, max );
     if( E_random_I_prepare_data( n * bits ))
         return ~0;
-    while( n-- )
+    do
     {   unsigned char c = E_random_R_bits(bits);
         c += min;
         if( c > max )
             c = c - ( max + 1 ) + min;
         cputc( c, decor );
-    }
+    }while( --n );
     return 0;
 }
 
 static
 int
-output_random( enum output_type type
+E_main_S_print( enum output_type type
 , int n
 , int decor
 ){  switch(type)
@@ -183,7 +184,7 @@ output_random( enum output_type type
             unsigned bits = bits_in_range( 0, range - 1 );
             if( E_random_I_prepare_data( n * bits ))
                 return ~0;
-            while( n-- )
+            do
             {   unsigned char c = E_random_R_bits(bits);
                 c += '0';
                 if( c > '9' )
@@ -201,7 +202,7 @@ output_random( enum output_type type
                     }
                 }
                 cputc( c, decor );
-            }
+            }while( --n );
             break;
         }
       case ty_lcase:
@@ -209,7 +210,7 @@ output_random( enum output_type type
             unsigned bits = bits_in_range( 0, range - 1 );
             if( E_random_I_prepare_data( n * bits ))
                 return ~0;
-            while( n-- )
+            do
             {   unsigned char c = E_random_R_bits(bits);
                 c += '0';
                 if( c > '9' )
@@ -221,7 +222,7 @@ output_random( enum output_type type
                     }
                 }
                 cputc( c, decor );
-            }
+            }while( --n );
             break;
         }
       case ty_ucase:
@@ -229,7 +230,7 @@ output_random( enum output_type type
             unsigned bits = bits_in_range( 0, range - 1 );
             if( E_random_I_prepare_data( n * bits ))
                 return ~0;
-            while( n-- )
+            do
             {   unsigned char c = E_random_R_bits(bits);
                 c += '0';
                 if( c > '9' )
@@ -241,7 +242,7 @@ output_random( enum output_type type
                     }
                 }
                 cputc( c, decor );
-            }
+            }while( --n );
             break;
         }
       case ty_alpha:
@@ -249,7 +250,7 @@ output_random( enum output_type type
             unsigned bits = bits_in_range( 0, range - 1 );
             if( E_random_I_prepare_data( n * bits ))
                 return ~0;
-            while( n-- )
+            do
             {   unsigned char c = E_random_R_bits(bits);
                 c += 'A';
                 if( c > 'Z' )
@@ -261,7 +262,7 @@ output_random( enum output_type type
                     }
                 }
                 cputc( c, decor );
-            }
+            }while( --n );
             break;
         }
       case ty_alcase:
@@ -275,15 +276,17 @@ output_random( enum output_type type
       case ty_hex:
         {   if( E_random_I_prepare_data( n * 4 ))
                 return ~0;
-            while( n-- )
-                printf( "%01x", E_random_R_bits(4) );
+            do
+            {   printf( "%01x", E_random_R_bits(4) );
+            }while( --n );
             break;
         }
       case ty_uhex:
         {   if( E_random_I_prepare_data( n * 4 ))
                 return ~0;
-            while( n-- )
-                printf( "%01X", E_random_R_bits(4) );
+            do
+            {   printf( "%01X", E_random_R_bits(4) );
+            }while( --n );
             break;
         }
       case ty_dec:
@@ -303,40 +306,40 @@ output_random( enum output_type type
             if( E_random_I_prepare_data( n * bits ))
                 return ~0;
             unsigned n_ = n;
-            while( n_-- )
+            do
             {   unsigned char c = E_random_R_bits(bits);
-                if( !n_ )
+                if( n_ == 1 )
                     if( !c )
                         c == 1;
                     else if( c > 254 )
                         c = c - ( 254 + 1 ) + 1;
-                else if( n_ == n - 1 )
+                else if( n_ == n )
                     if( !c )
                         c == 1;
                 printf( "%u", c );
-                if( n_ )
+                if( n_ != 1 )
                     putchar( '.' );
-            }
+            }while( --n_ );
             break;
         }
       case ty_mac:
         {   if( E_random_I_prepare_data( n * 8 ))
                 return ~0;
-            while( n-- )
+            do
             {   printf( "%02x", E_random_R_bits(8) );
-                if(n)
+                if( n != 1 )
                     putchar( ':' );
-            }
+            }while( --n );
             break;
         }
       case ty_umac:
         {   if( E_random_I_prepare_data( n * 8 ))
                 return ~0;
-            while( n-- )
+            do
             {   printf( "%02X", E_random_R_bits(8) );
-                if(n)
+                if( n != 1 )
                     putchar( ':' );
-            }
+            }while( --n );
             break;
         }
       case ty_uuid:
@@ -356,13 +359,13 @@ output_random( enum output_type type
 
 
 int main(int argc, char *argv[])
-{
-  int opt;
-  int n = 8;		/* Characters wanted */
-  int decor = 0;		/* Precede hex numbers with 0x, oct with 0 */
-  int monocase = 0;		/* 1 for lower, 2 for upper */
-  enum output_type type = ty_ascii;
-  int i;
+{   int opt;
+    int passwords = 1;
+    int elements = 12;		/* Characters wanted */
+    int decor = 0;		    /* Precede hex numbers with 0x, oct with 0 */
+    int monocase = 0;		/* 1 for lower, 2 for upper */
+    enum output_type type = ty_ascii;
+    int i;
 
     E_main_S_program = argv[0];
     _Bool type_selected = false;
@@ -444,21 +447,21 @@ int main(int argc, char *argv[])
                     usage(1);
                 type_selected = true;
                 type = ty_ip;
-                n = 4;
+                elements = 4;
                 break;
           case 'm':			    /* Lower case MAC address */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_mac;
-                n = 6;
+                elements = 6;
                 break;
           case 'M':			    /* Upper case MAC address */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
                 type = ty_umac;
-                n = 6;
+                elements = 6;
                 break;
           case 'g':			    /* UUID/GUID */
                 if( type_selected )
@@ -495,23 +498,35 @@ int main(int argc, char *argv[])
                 break;
         }
     if( optind != argc )
-    {   if( optind + 1 != argc )
-            usage(1);
-        n = atoi( argv[optind] );
-        if( !n
+    {   elements = atoi( argv[optind] );
+        if( !elements
         || ( type == ty_ip
-          && n > 4
+          && elements > 4
         )
         || (( type == ty_mac
             || type == ty_umac
           )
-          && n > 6
+          && elements > 6
+        ))
+            usage(1);
+        if( type == ty_uuid
+        || type == ty_uuuid
         )
-        || type == ty_uuid
+            passwords = elements;
+        optind++;
+    }
+    if( optind != argc )
+    {   if( type == ty_uuid
         || type == ty_uuuid
         )
             usage(1);
+        passwords = atoi( argv[optind] );
+        if( !passwords )
+            usage(1);
+        optind++;
     }
+    if( optind != argc )
+        usage(1);
     E_random_M();
     /* Adjust type for monocasing */
     if(monocase)
@@ -527,36 +542,38 @@ int main(int argc, char *argv[])
                 type += monocase-1;
                 break;
         }
-    if(decor)
-        switch(type)
-        { case ty_hex:
-          case ty_uhex:
-                putchar('0');
-                putchar('x');
-                break;
-          case ty_oct:
-                putchar('0');
-                break;
-          case ty_dec:
-                /* Do nothing - handled later */
-                break;
-          default:
-                putchar('\"');
-                break;
-        }
-    output_random(type, n, decor);
-    if(decor)
-        switch(type)
-        { case ty_hex:
-          case ty_uhex:
-          case ty_oct:
-          case ty_dec:
-                /* Do nothing */
-                break;
-          default:
-                putchar('\"');
-                break;
-        }
-    putchar('\n');
+    do
+    {   if(decor)
+            switch(type)
+            { case ty_hex:
+              case ty_uhex:
+                    putchar('0');
+                    putchar('x');
+                    break;
+              case ty_oct:
+                    putchar('0');
+                    break;
+              case ty_dec:
+                    /* Do nothing - handled later */
+                    break;
+              default:
+                    putchar('\"');
+                    break;
+            }
+        E_main_S_print( type, elements, decor );
+        if(decor)
+            switch(type)
+            { case ty_hex:
+              case ty_uhex:
+              case ty_oct:
+              case ty_dec:
+                    /* Do nothing */
+                    break;
+              default:
+                    putchar('\"');
+                    break;
+            }
+        putchar('\n');
+    }while( --passwords );
     return 0;
 }

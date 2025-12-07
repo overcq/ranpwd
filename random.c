@@ -34,95 +34,135 @@ E_random_M( void
         srand( t ^ pid );		/* As secure as we can get... */
 	}
 }
+static
 int
-E_random_I_prepare_data( size_t bits
-){  if( bits > E_random_S_n_bits - E_random_S_i_bit )
-        if( ~E_random_S_random_fd )
-        {   size_t bytes = bits / 8 + ( bits % 8 ? 1 : 0 );
-            size_t all_bits;
-            if( E_random_S_n_bits - E_random_S_i_bit )
-            {   if( bits % 8 > ( E_random_S_n_bits - E_random_S_i_bit ) % 8 ) // Jeśli nie wystarczy reszty bitów w bajcie, to trzeba przygotować jeden bajt więcej danych.
-                {   all_bits = bytes * 8 + ( E_random_S_n_bits - E_random_S_i_bit ) % 8;
-                    bytes++;
-                }else
-                    all_bits = J_align_down( bits, 8 ) + ( E_random_S_n_bits - E_random_S_i_bit ) % 8;
+E_random_I_prepare_data_I( size_t bits
+, size_t rand_bits
+, size_t *all_bits
+, size_t *new_rands
+){  size_t new_bits = bits - ( E_random_S_n_bits - E_random_S_i_bit );
+    new_bits = J_align_up( new_bits, rand_bits );
+    *all_bits = new_bits + ( E_random_S_n_bits - E_random_S_i_bit );
+    size_t bytes = *all_bits / 8 + ( *all_bits % 8 ? 1 : 0 );
+    unsigned char *data = realloc( E_random_S_data, bytes );
+    if( !data )
+        return ~0;
+    E_random_S_data = data;
+    if( E_random_S_n_bits - E_random_S_i_bit ) // Przeniesienie pozostałych danych na koniec.
+        if( new_bits < E_random_S_i_bit
+        || new_bits >= E_random_S_n_bits
+        ) // Kopiując od początku.
+        {   size_t dst = new_bits / 8;
+            size_t src = E_random_S_i_bit / 8;
+            unsigned dst_bits = J_min( 8 - new_bits % 8, E_random_S_n_bits - E_random_S_i_bit );
+            unsigned src_bits = ( E_random_S_n_bits - 1 ) / 8 != E_random_S_i_bit / 8
+            ? 8 - E_random_S_i_bit % 8
+            : E_random_S_n_bits - E_random_S_i_bit;
+            if(( E_random_S_n_bits - 1 ) / 8 == E_random_S_i_bit / 8 )
+                data[dst] = data[src] >> ( E_random_S_i_bit % 8 ) << ( new_bits % 8 );
+            else if( dst_bits > src_bits )
+            {   data[dst] = ( data[src] >> ( 8 - src_bits )) << ( new_bits % 8 );
+                src++;
+                data[dst] |= ( data[src] & J_mask( dst_bits - src_bits )) << ( new_bits % 8 + src_bits );
             }else
-                all_bits = bytes * 8;
-            unsigned char *data = realloc( E_random_S_data, bytes );
-            if( !data )
-                return ~0;
-            E_random_S_data = data;
-            size_t new_bits = bits - ( E_random_S_n_bits - E_random_S_i_bit );
-            if( E_random_S_n_bits - E_random_S_i_bit ) // Przeniesienie pozostałych danych na koniec do początku bajtu.
-            {   size_t dst = bytes - 1;
-                size_t src = ( E_random_S_n_bits - 1 ) / 8;
-                unsigned dst_bits = ( bits - 1 ) % 8 + 1;
-                unsigned src_bits = E_random_S_n_bits
-                - (( E_random_S_n_bits - 1 ) % 8 != E_random_S_i_bit % 8
-                  ? J_align_down( E_random_S_n_bits - 1, 8 )
-                  : E_random_S_i_bit % 8
-                  );
-                if(( E_random_S_n_bits - 1 ) % 8 == E_random_S_i_bit % 8 )
-                    data[dst] = data[src] >> ( E_random_S_i_bit % 8 );
-                else if( src_bits == dst_bits )
-                    data[dst] = data[src];
-                else if( src_bits > dst_bits )
-                    data[dst] = data[src] >> ( src_bits - dst_bits );
-                else
+            {   data[dst] = ( data[src] >> ( src_bits - dst_bits )) << ( new_bits % 8 );
+                if( dst_bits == src_bits )
+                    src++;
+            }
+            E_random_S_i_bit += dst_bits;
+            while( E_random_S_i_bit != E_random_S_n_bits )
+            {   dst++;
+                unsigned dst_bits = J_min( 8, E_random_S_n_bits - E_random_S_i_bit );
+                unsigned src_bits = 8 - E_random_S_i_bit % 8;
+                if( dst_bits > src_bits )
+                {   data[dst] = data[src] << ( 8 - src_bits );
+                    src++;
+                    data[dst] |= data[src] & J_mask( dst_bits - src_bits );
+                }else
+                {   data[dst] = data[src] >> ( src_bits - dst_bits );
+                    if( dst_bits == src_bits )
+                        src++;
+                }
+                E_random_S_i_bit += dst_bits;
+            }
+        }else // Kopiując od końca.
+        {   size_t dst = bytes - 1;
+            size_t src = ( E_random_S_n_bits - 1 ) / 8;
+            unsigned dst_bits = ( E_random_S_n_bits - 1 ) / 8 != E_random_S_i_bit / 8
+            ? *all_bits % 8
+            : E_random_S_n_bits - E_random_S_i_bit;
+            unsigned src_bits = E_random_S_n_bits
+            - (( E_random_S_n_bits - 1 ) / 8 != E_random_S_i_bit / 8
+              ? J_align_down( E_random_S_n_bits - 1, 8 )
+              : E_random_S_i_bit
+              );
+            if(( E_random_S_n_bits - 1 ) / 8 == E_random_S_i_bit / 8 )
+                data[dst] = data[src] >> ( E_random_S_i_bit % 8 );
+            else if( dst_bits > src_bits )
+            {   data[dst] = data[src] << ( dst_bits - src_bits );
+                src--;
+                data[dst] |= data[src] >> ( 8 - ( dst_bits - src_bits ));
+            }else
+            {   data[dst] = data[src] >> ( src_bits - dst_bits );
+                if( dst_bits == src_bits )
+                    src--;
+            }
+            while( E_random_S_n_bits != E_random_S_i_bit )
+            {   dst--;
+                unsigned dst_bits = J_min( 8, E_random_S_n_bits - E_random_S_i_bit );
+                unsigned src_bits = E_random_S_n_bits - J_align_down( E_random_S_n_bits - 1, 8 );
+                if( dst_bits > src_bits )
                 {   data[dst] = data[src] << ( dst_bits - src_bits );
                     src--;
                     data[dst] |= data[src] >> ( 8 - ( dst_bits - src_bits ));
+                }else
+                {   data[dst] = data[src] >> ( src_bits - dst_bits );
+                    if( dst_bits == src_bits )
+                        src--;
                 }
                 E_random_S_n_bits -= dst_bits;
-                while( E_random_S_n_bits )
-                {   dst--;
-                    unsigned dst_bits = 8;
-                    unsigned src_bits = E_random_S_n_bits - J_align_down( E_random_S_n_bits - 1, 8 );
-                    if( src_bits == dst_bits )
-                        data[dst] = data[src];
-                    else if( src_bits > dst_bits )
-                        data[dst] = data[src] >> ( src_bits - dst_bits );
-                    else
-                    {   data[dst] = data[src] << ( dst_bits - src_bits );
-                        src--;
-                        data[dst] |= data[src] >> ( 8 - ( dst_bits - src_bits ));
-                    }
-                    E_random_S_n_bits -= dst_bits;
-                }
             }
-            size_t new_bytes = new_bits / 8 + ( new_bits % 8 ? 1 : 0 );
+        }
+    *new_rands = new_bits / rand_bits;
+}
+int
+E_random_I_prepare_data( size_t bits
+){  if( bits > E_random_S_n_bits - E_random_S_i_bit )
+    {   size_t all_bits;
+        if( ~E_random_S_random_fd )
+        {   size_t new_rands;
+            E_random_I_prepare_data_I( bits, 8, &all_bits, &new_rands );
+            unsigned char *data = E_random_S_data;
             do
-            {   int i = read( E_random_S_random_fd, data, new_bytes );
+            {   int i = read( E_random_S_random_fd, data, new_rands );
                 if( !~i )
                     return i;
-                new_bytes -= i;
+                new_rands -= i;
                 data += i;
-            }while( new_bytes );
-            E_random_S_n_bits = all_bits;
-            E_random_S_i_bit = 0;
-        }/*else //TODO Zmienić na wybieranie bitowe.
-        {   if( bits > E_random_S_n_bits - E_random_S_i_bit )
-            {   data = realloc( E_random_S_data, bits / 8 + ( bits % 8 ? 1 : 0 ));
-                if( !data )
-                    return ~0;
-                E_random_S_data = data;
-            }else
-                data = E_random_S_data;
-            size_t new_bits = bits - ( E_random_S_n_bits - E_random_S_i_bit );
-            size_t new_bytes = new_bits / 8 + ( new_bits % 8 ? 1 : 0 );
-            if( RAND_MAX >= ( 2U << 16 ) - 1 )
-            {   _Bool half = n % 2;
-                n /= 2;
-                while( n-- )
-                {   *( unsigned short * )buf_ = ( unsigned short )rand();
-                    buf_ += 2;
+            }while( new_rands );
+        }else
+        {   unsigned rand_bits = sizeof(unsigned) * 8 - __builtin_clz( RAND_MAX );
+            if( RAND_MAX ^ J_mask( rand_bits ))
+                rand_bits >>= 1;
+            size_t new_rands;
+            E_random_I_prepare_data_I( bits, rand_bits, &all_bits, &new_rands );
+            unsigned char *data = E_random_S_data;
+            do
+            {   int d = rand();
+                for( unsigned i = 0; i < rand_bits; i += 8 )
+                {   if( new_rands != 1
+                    || i + 8 < rand_bits
+                    )
+                        *data = ( unsigned char )( d >> i );
+                    else
+                        *data = ( *data & ~J_mask(i) ) | ( unsigned char )( d >> i );
+                    data++;
                 }
-                if(half)
-                    *buf_ = ( unsigned char )rand();
-            }else
-                while( n-- )
-                    *buf_++ = ( unsigned char )rand();
-        }*/
+            }while( --new_rands );
+        }
+        E_random_S_n_bits = all_bits;
+        E_random_S_i_bit = 0;
+    }
     return 0;
 }
 unsigned char
