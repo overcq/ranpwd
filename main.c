@@ -2,22 +2,14 @@
  *   
  *   Copyright 1994-2008 H. Peter Anvin - All Rights Reserved
  *
- *   This E_main_S_program is free software; you can redistribute it and/or modify
+ *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
  *   the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
  *   Boston MA 02110-1301, USA; either version 3 of the License, or
  *   (at your option) any later version; incorporated herein by reference.
  *
  * ----------------------------------------------------------------------- */
-
-/*
- * ranpwd.c: Generate random passwords using the Linux kernel-based true
- *           random number generator (if available.)
- */
-
 #include "config.h"
-
-#include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
@@ -26,23 +18,36 @@
 #ifdef HAVE_GETOPT_H
 #include <getopt.h>
 #endif
-
 #include "main.h"
 #include "random.h"
-
-extern _Bool E_random_S_secure_source;
-
-const char *E_main_S_program;
-
+//==============================================================================
+enum output_type {
+  ty_hard,
+  ty_ascii, ty_lascii, ty_uascii,
+  ty_anum, ty_lcase, ty_ucase,
+  ty_alpha, ty_alcase, ty_aucase,
+  ty_hex, ty_uhex,
+  ty_ip,
+  ty_mac, ty_umac,
+  ty_uuid, ty_uuuid,
+  ty_dec, ty_oct, ty_binary
+};
 enum extended_options {
   OPT_UPPER = 256,
   OPT_LOWER,
   OPT_ASCII,
 };
-
-static const char *short_options = "aluxXdobALUimgGMschV";
+struct E_main_Z_min_max
+{ unsigned min, max;
+};
+//==============================================================================
+extern _Bool E_random_S_secure_source;
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+const char *E_main_S_program;
+static const char *short_options = "raluxXdobALUimgGMschV";
 #ifdef HAVE_GETOPT_LONG
 const struct option long_options[] = {
+  { "hard",         0, 0, 'r' },
   { "ascii",        0, 0, OPT_ASCII },
   { "alphanum",		0, 0, 'a' },
   { "lc-alphanum",	0, 0, 'l' },
@@ -73,12 +78,13 @@ const struct option long_options[] = {
 #define getopt_long(C,V,O,L,I) getopt(C,V,O)
 #define LO(X)
 #endif
-
+//==============================================================================
 static void usage(int err)
 {
   fprintf(stderr,
 	  "%s %s\n"
 	  "Usage: %s [options] [length [count]]\n"
+	  LO("  --hard               " "  -r  Hard password\n")
 	  LO("  --ascii              " "      Any ASCII characters\n")
 	  LO("  --alphanum           ")"  -a  Alphanumeric\n"
 	  LO("  --alphanum --lower   ")"  -l  Lower case alphanumeric\n"
@@ -103,7 +109,7 @@ static void usage(int err)
 	  , PACKAGE_NAME, PACKAGE_VERSION, E_main_S_program);
   exit(err);
 }
-
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /*
  * cputc():
  *
@@ -122,155 +128,254 @@ cputc( int c
         }
     putchar(c);
 }
-
-enum output_type {
-  ty_ascii, ty_lascii, ty_uascii,
-  ty_anum, ty_lcase, ty_ucase,
-  ty_alpha, ty_alcase, ty_aucase,
-  ty_hex, ty_uhex,
-  ty_ip,
-  ty_mac, ty_umac,
-  ty_uuid, ty_uuuid,
-  ty_dec, ty_oct, ty_binary
-};
-
 static
 int
-bits_in_range( unsigned min
-, unsigned max
-){  return sizeof(unsigned) * 8 - __builtin_clz( max - min + 1 - 1 );
+bits_in_count( unsigned count
+){  return sizeof(unsigned) * 8 - __builtin_clz( count - 1 );
 }
-
+static
+unsigned
+E_main_I_print_I_ranges_I_bits(
+  unsigned ranges_n
+, struct E_main_Z_min_max ranges[]
+){  unsigned count = 0;
+    for( unsigned i = 0; i != ranges_n; i++ )
+        count += ranges[i].max - ranges[i].min + 1;
+    return bits_in_count(count);
+}
+static
+unsigned
+E_main_I_print_I_ranges_I_chars( unsigned c
+, unsigned ranges_n
+, struct E_main_Z_min_max ranges[]
+){  unsigned i = 0;
+    do
+    {   c += ranges[i].min;
+        if( c <= ranges[i].max )
+            break;
+        c -= ranges[i].max + 1;
+        if( i != ranges_n - 1 )
+            i++;
+        else
+            i = 0;
+    }while(true);
+    return c;
+}
 static
 int
-output_random_single_range( enum output_type type
+E_main_I_print_I_ranges( enum output_type type
 , int n
 , int decor
-, unsigned char min
-, unsigned char max
-){  unsigned bits = bits_in_range( min, max );
+, unsigned ranges_n
+, struct E_main_Z_min_max ranges[]
+){  unsigned bits = E_main_I_print_I_ranges_I_bits( ranges_n, ranges );
     if( E_random_I_prepare_data( n * bits ))
         return ~0;
     do
-    {   unsigned char c = E_random_R_bits(bits);
-        c += min;
-        if( c > max )
-            c = c - ( max + 1 ) + min;
+    {   unsigned c = E_random_R_bits(bits);
+        c = E_main_I_print_I_ranges_I_chars( c, ranges_n, ranges );
         cputc( c, decor );
     }while( --n );
     return 0;
 }
-
 static
 int
-E_main_S_print( enum output_type type
+E_main_I_print( enum output_type type
 , int n
 , int decor
 ){  switch(type)
-    { case ty_ascii:
-            if( output_random_single_range( type, n, decor, 0x21, 0x7e ))
+    { case ty_hard:
+        {   struct E_main_Z_min_max ranges[] =
+            { 0x21, 0x2f
+            , 0x3a, 0x40
+            , 0x5b, 0x60
+            , 0x7b, 0x7e
+            };
+            unsigned ranges_n = n < J_a_R_n(ranges) ? n : J_a_R_n(ranges);
+            unsigned bits = E_main_I_print_I_ranges_I_bits( ranges_n, ranges );
+            if( E_random_I_prepare_data(bits))
                 return ~0;
-            break;
-      case ty_lascii:
-            if( output_random_single_range( type, n, decor, 'A', 'Z' ))
-                return ~0;
-            break;
-      case ty_uascii:
-            if( output_random_single_range( type, n, decor, 'a', 'z' ))
-                return ~0;
-            break;
-      case ty_anum:
-        {   unsigned range = ( '9' - '0' + 1 ) + ( 'Z' - 'A' + 1 ) + ( 'z' - 'a' + 1 );
-            unsigned bits = bits_in_range( 0, range - 1 );
-            if( E_random_I_prepare_data( n * bits ))
-                return ~0;
-            do
-            {   unsigned char c = E_random_R_bits(bits);
-                c += '0';
-                if( c > '9' )
-                {   c = c - ( '9' + 1 ) + 'A';
-                    if( c > 'Z' )
-                    {   c = c - ( 'Z' + 1 ) + 'a';
-                        if( c > 'z' )
-                        {   c = c - ( 'z' + 1 ) + '0';
-                            if( c > '9' )
-                            {   c = c - ( '9' + 1 ) + 'A';
-                                if( c > 'Z' )
-                                    c = c - ( 'Z' + 1 ) + 'a';
-                            }
+            unsigned range_c[ ranges_n ];
+            range_c[0] = E_random_R_bits(bits);
+            range_c[0] = E_main_I_print_I_ranges_I_chars( range_c[0], ranges_n, ranges );
+            unsigned ranges_n_ = ranges_n;
+            if( --ranges_n_ )
+            {   struct E_main_Z_min_max range = { 'A', 'Z' };
+                unsigned bits = E_main_I_print_I_ranges_I_bits( 1, &range );
+                if( E_random_I_prepare_data(bits))
+                    return ~0;
+                range_c[1] = E_random_R_bits( E_main_I_print_I_ranges_I_bits( 1, &range ));
+                range_c[1] = E_main_I_print_I_ranges_I_chars( range_c[1], 1, &range );
+                if( --ranges_n_ )
+                {   struct E_main_Z_min_max range = { 'a', 'z' };
+                    unsigned bits = E_main_I_print_I_ranges_I_bits( 1, &range );
+                    if( E_random_I_prepare_data(bits))
+                        return ~0;
+                    range_c[2] = E_random_R_bits( E_main_I_print_I_ranges_I_bits( 1, &range ));
+                    range_c[2] = E_main_I_print_I_ranges_I_chars( range_c[2], 1, &range );
+                    if( --ranges_n_ )
+                    {   struct E_main_Z_min_max range = { '0', '9' };
+                        unsigned bits = E_main_I_print_I_ranges_I_bits( 1, &range );
+                        if( E_random_I_prepare_data(bits))
+                            return ~0;
+                        range_c[3] = E_random_R_bits( E_main_I_print_I_ranges_I_bits( 1, &range ));
+                        range_c[3] = E_main_I_print_I_ranges_I_chars( range_c[3], 1, &range );
+                    }
+                }
+            }
+            if( n > 1 )
+            {   unsigned bits = 0;
+                for( unsigned i = 0; i != ranges_n; i++ )
+                    bits += bits_in_count( n - i );
+                if( E_random_I_prepare_data(bits))
+                    return ~0;
+                unsigned pos[ ranges_n ];
+                _Bool pos_had[ ranges_n ];
+                for( unsigned i = 0; i != ranges_n; i++ )
+                {   pos[i] = E_random_R_bits( bits_in_count( n - i ));
+                    pos[i] = E_main_I_print_I_ranges_I_chars( pos[i], 1, &( struct E_main_Z_min_max ){ 0, n - 1 - i });
+                    for( unsigned j = 0; j != ranges_n; j++ )
+                        pos_had[j] = false;
+                    for( unsigned j = 0; j != i; j++ )
+                    {   if( pos_had[j] )
+                            continue;
+                        if( pos[i] >= pos[j] )
+                        {   pos[i]++;
+                            pos_had[j] = true;
+                            j = -1;
                         }
                     }
                 }
+                struct E_main_Z_min_max range = { 0x21, 0x7e };
+                bits = E_main_I_print_I_ranges_I_bits( 1, &range );
+                if( E_random_I_prepare_data(( n - ranges_n ) * bits ))
+                    return ~0;
+                for( unsigned i = 0; i != n; i++ )
+                {   unsigned c;
+                    unsigned j;
+                    for( j = 0; j != ranges_n; j++ )
+                        if( pos[j] == i )
+                        {   c = range_c[j];
+                            break;
+                        }
+                    if( j == ranges_n )
+                    {   c = E_random_R_bits(bits);
+                        c = E_main_I_print_I_ranges_I_chars( c, 1, &range );
+                    }
+                    cputc( c, decor );
+                }
+            }else
+            {   cputc( range_c[0], decor );
+            }
+            break;
+        }
+      case ty_ascii:
+            if( E_main_I_print_I_ranges( type, n, decor, 1, &( struct E_main_Z_min_max ){ 0x21, 0x7e }))
+                return ~0;
+            break;
+      case ty_lascii:
+        {   struct E_main_Z_min_max ranges[] =
+            { 0x21, 0x40
+            , 0x5b, 0x7e
+            };
+            unsigned ranges_n = J_a_R_n(ranges);
+            unsigned bits = E_main_I_print_I_ranges_I_bits( ranges_n, ranges );
+            if( E_random_I_prepare_data( n * bits ))
+                return ~0;
+            do
+            {   unsigned c = E_random_R_bits(bits);
+                c = E_main_I_print_I_ranges_I_chars( c, ranges_n, ranges );
+                cputc( c, decor );
+            }while( --n );
+            break;
+        }
+      case ty_uascii:
+        {   struct E_main_Z_min_max ranges[] =
+            { 0x21, 0x60
+            , 0x7b, 0x7e
+            };
+            unsigned ranges_n = J_a_R_n(ranges);
+            unsigned bits = E_main_I_print_I_ranges_I_bits( ranges_n, ranges );
+            if( E_random_I_prepare_data( n * bits ))
+                return ~0;
+            do
+            {   unsigned c = E_random_R_bits(bits);
+                c = E_main_I_print_I_ranges_I_chars( c, ranges_n, ranges );
+                cputc( c, decor );
+            }while( --n );
+            break;
+        }
+      case ty_anum:
+        {   struct E_main_Z_min_max ranges[] =
+            { '0', '9'
+            , 'A', 'Z'
+            , 'a', 'z'
+            };
+            unsigned ranges_n = J_a_R_n(ranges);
+            unsigned bits = E_main_I_print_I_ranges_I_bits( ranges_n, ranges );
+            if( E_random_I_prepare_data( n * bits ))
+                return ~0;
+            do
+            {   unsigned c = E_random_R_bits(bits);
+                c = E_main_I_print_I_ranges_I_chars( c, ranges_n, ranges );
                 cputc( c, decor );
             }while( --n );
             break;
         }
       case ty_lcase:
-        {   unsigned range = ( '9' - '0' + 1 ) + ( 'z' - 'a' + 1 );
-            unsigned bits = bits_in_range( 0, range - 1 );
+        {   struct E_main_Z_min_max ranges[] =
+            { '0', '9'
+            , 'a', 'z'
+            };
+            unsigned ranges_n = J_a_R_n(ranges);
+            unsigned bits = E_main_I_print_I_ranges_I_bits( ranges_n, ranges );
             if( E_random_I_prepare_data( n * bits ))
                 return ~0;
             do
-            {   unsigned char c = E_random_R_bits(bits);
-                c += '0';
-                if( c > '9' )
-                {   c = c - ( '9' + 1 ) + 'a';
-                    if( c > 'z' )
-                    {   c = c - ( 'z' + 1 ) + '0';
-                        if( c > '9' )
-                            c = c - ( '9' + 1 ) + 'a';
-                    }
-                }
+            {   unsigned c = E_random_R_bits(bits);
+                c = E_main_I_print_I_ranges_I_chars( c, ranges_n, ranges );
                 cputc( c, decor );
             }while( --n );
             break;
         }
       case ty_ucase:
-        {   unsigned range = ( '9' - '0' + 1 ) + ( 'Z' - 'A' + 1 );
-            unsigned bits = bits_in_range( 0, range - 1 );
+        {   struct E_main_Z_min_max ranges[] =
+            { '0', '9'
+            , 'A', 'Z'
+            };
+            unsigned ranges_n = J_a_R_n(ranges);
+            unsigned bits = E_main_I_print_I_ranges_I_bits( ranges_n, ranges );
             if( E_random_I_prepare_data( n * bits ))
                 return ~0;
             do
-            {   unsigned char c = E_random_R_bits(bits);
-                c += '0';
-                if( c > '9' )
-                {   c = c - ( '9' + 1 ) + 'A';
-                    if( c > 'Z' )
-                    {   c = c - ( 'Z' + 1 ) + '0';
-                        if( c > '9' )
-                            c = c - ( '9' + 1 ) + 'A';
-                    }
-                }
+            {   unsigned c = E_random_R_bits(bits);
+                c = E_main_I_print_I_ranges_I_chars( c, ranges_n, ranges );
                 cputc( c, decor );
             }while( --n );
             break;
         }
       case ty_alpha:
-        {   unsigned range = ( 'Z' - 'A' + 1 ) + ( 'z' - 'a' + 1 );
-            unsigned bits = bits_in_range( 0, range - 1 );
+        {   struct E_main_Z_min_max ranges[] =
+            { 'A', 'Z'
+            , 'a', 'z'
+            };
+            unsigned ranges_n = J_a_R_n(ranges);
+            unsigned bits = E_main_I_print_I_ranges_I_bits( ranges_n, ranges );
             if( E_random_I_prepare_data( n * bits ))
                 return ~0;
             do
-            {   unsigned char c = E_random_R_bits(bits);
-                c += 'A';
-                if( c > 'Z' )
-                {   c = c - ( 'Z' + 1 ) + 'a';
-                    if( c > 'z' )
-                    {   c = c - ( 'z' + 1 ) + 'A';
-                        if( c > 'Z' )
-                            c = c - ( 'Z' + 1 ) + 'a';
-                    }
-                }
+            {   unsigned c = E_random_R_bits(bits);
+                c = E_main_I_print_I_ranges_I_chars( c, ranges_n, ranges );
                 cputc( c, decor );
             }while( --n );
             break;
         }
       case ty_alcase:
-            if( output_random_single_range( type, n, decor, 'a', 'z' ))
+            if( E_main_I_print_I_ranges( type, n, decor, 1, &( struct E_main_Z_min_max ){ 'a', 'z' }))
                 return ~0;
             break;
       case ty_aucase:
-            if( output_random_single_range( type, n, decor, 'A', 'Z' ))
+            if( E_main_I_print_I_ranges( type, n, decor, 1, &( struct E_main_Z_min_max ){ 'A', 'Z' }))
                 return ~0;
             break;
       case ty_hex:
@@ -290,24 +395,24 @@ E_main_S_print( enum output_type type
             break;
         }
       case ty_dec:
-            if( output_random_single_range( type, n, decor, '0', '9' ))
+            if( E_main_I_print_I_ranges( type, n, decor, 1, &( struct E_main_Z_min_max ){ '0', '9' }))
                 return ~0;
             break;
       case ty_oct:
-            if( output_random_single_range( type, n, decor, '0', '7' ))
+            if( E_main_I_print_I_ranges( type, n, decor, 1, &( struct E_main_Z_min_max ){ '0', '7' }))
                 return ~0;
             break;
       case ty_binary:
-            if( output_random_single_range( type, n, decor, '0', '1' ))
+            if( E_main_I_print_I_ranges( type, n, decor, 1, &( struct E_main_Z_min_max ){ '0', '1' }))
                 return ~0;
             break;
       case ty_ip:
-        {   unsigned bits = bits_in_range( 0, 255 );
+        {   unsigned bits = E_main_I_print_I_ranges_I_bits( 1, &( struct E_main_Z_min_max ){ 0, 255 });
             if( E_random_I_prepare_data( n * bits ))
                 return ~0;
             unsigned n_ = n;
             do
-            {   unsigned char c = E_random_R_bits(bits);
+            {   unsigned c = E_random_R_bits(bits);
                 if( n_ == 1 )
                     if( !c )
                         c == 1;
@@ -356,10 +461,10 @@ E_main_S_print( enum output_type type
         }
     }
 }
-
-
-int main(int argc, char *argv[])
-{   int opt;
+int
+main( int argc
+, char *argv[]
+){  int opt;
     int passwords = 1;
     int elements = 12;		/* Characters wanted */
     int decor = 0;		    /* Precede hex numbers with 0x, oct with 0 */
@@ -371,7 +476,13 @@ int main(int argc, char *argv[])
     _Bool type_selected = false;
     while(( opt = getopt_long(argc, argv, short_options, long_options, NULL)) != EOF )
         switch(opt)
-        { case OPT_ASCII:		/* ASCII */
+        { case 'r':
+                if( type_selected )
+                    usage(1);
+                type_selected = true;
+                type = ty_hard;
+                break;
+          case OPT_ASCII:		/* ASCII */
                 if( type_selected )
                     usage(1);
                 type_selected = true;
@@ -527,7 +638,6 @@ int main(int argc, char *argv[])
     }
     if( optind != argc )
         usage(1);
-    E_random_M();
     /* Adjust type for monocasing */
     if(monocase)
         switch(type)
@@ -541,7 +651,11 @@ int main(int argc, char *argv[])
           case ty_uuid:
                 type += monocase-1;
                 break;
+          default:
+                usage(1);
+                break;
         }
+    E_random_M();
     do
     {   if(decor)
             switch(type)
@@ -560,7 +674,7 @@ int main(int argc, char *argv[])
                     putchar('\"');
                     break;
             }
-        E_main_S_print( type, elements, decor );
+        E_main_I_print( type, elements, decor );
         if(decor)
             switch(type)
             { case ty_hex:
@@ -577,3 +691,4 @@ int main(int argc, char *argv[])
     }while( --passwords );
     return 0;
 }
+/******************************************************************************/
